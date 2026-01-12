@@ -10,8 +10,7 @@ permissions:
 jobs:
   tag:
     runs-on: ubuntu-latest
-    if: ${{ startsWith(github.event.head_commit.message, 'dep: update Caddy to') }}
-
+    if: ${{ startsWith(github.event.head_commit.message, "dep: update Caddy to") }}
     steps:
     - uses: actions/checkout@v4
       with:
