@@ -1,0 +1,63 @@
+name: Update Caddy Version
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly on Mondays at 2AM UTC
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Fetch latest Caddy release
+      id: caddy-version
+      run: |
+        LATEST=$(curl -s https://api.github.com/repos/caddyserver/caddy/releases/latest \
+          | jq -r .tag_name | sed 's/v//')
+        echo "latest_version=$LATEST" >> $GITHUB_OUTPUT
+        echo "Latest Caddy version: $LATEST"
+
+    - name: Check current version
+      id: current-version
+      run: |
+        CURRENT=$(sed -n 's/.*ARG CADDY_VERSION=\([^ ]*\).*/\1/p' Dockerfile | head -1)
+        echo "current_version=$CURRENT" >> $GITHUB_OUTPUT
+        echo "Current Dockerfile version: $CURRENT"
+        if [ "$CURRENT" = "${{ steps.caddy-version.outputs.latest_version }}" ]; then
+          echo "up_to_date=true" >> $GITHUB_OUTPUT
+        else
+          echo "up_to_date=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Update Dockerfile
+      if: steps.current-version.outputs.up_to_date == 'false'
+      run: |
+        sed -i "s/ARG CADDY_VERSION=.*/ARG CADDY_VERSION=${{ steps.caddy-version.outputs.latest_version }}/g" Dockerfile
+        git config user.name "Caddy Updater Bot"
+        git config user.email "bot@github.com"
+        git add Dockerfile
+        git commit -m "dep: update Caddy to ${{ steps.caddy-version.outputs.latest_version }} [skip ci]"
+        git push
+
+    - name: Create PR
+      if: steps.current-version.outputs.up_to_date == 'false'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh pr create \
+          --title "dep: update Caddy to ${{ steps.caddy-version.outputs.latest_version }}" \
+          --body "Updates Caddy from ${{ steps.current-version.outputs.current_version }} to latest stable ${{ steps.caddy-version.outputs.latest_version }}\n\n- [Release notes](https://github.com/caddyserver/caddy/releases/tag/v${{ steps.caddy-version.outputs.latest_version }})" \
+          --label "dependencies,automated" \
+          --base main
+
+    - name: No update needed
+      if: steps.current-version.outputs.up_to_date == 'true'
+      run: echo "Caddy version is already up to date!"
