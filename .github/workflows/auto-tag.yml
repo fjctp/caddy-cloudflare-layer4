@@ -1,0 +1,45 @@
+name: Tag Release on Merge
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    if: startsWith(github.event.head_commit.message, 'dep: update Caddy to')
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract Caddy version
+      id: version
+      run: |
+        VERSION=$(sed -n 's/.*ARG CADDY_VERSION=\([^ ]*\).*/\1/p' Dockerfile | head -1)
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Create tag
+      uses: actions-ecosystem/action-push-tag@v1
+      with:
+        tag: ${{ steps.version.outputs.version }}
+        message: "Release Caddy ${{ steps.version.outputs.version }}"
+
+    - name: Create release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.version.outputs.version }}
+        release_name: Caddy ${{ steps.version.outputs.version }}
+        body: |
+          Auto-released from main merge.
+          
+          Dockerfile now uses Caddy ${{ steps.version.outputs.version }}.
+        draft: false
+        prerelease: false
